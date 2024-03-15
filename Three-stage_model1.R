@@ -1,7 +1,7 @@
 ##############################################################################
 # R script for the Three-stage model 1
 # 
-# Author: Yoichi Tsuzuki, Hiroyuki Yokomizo
+# Author: Yoichi Tsuzuki
 # Affiliation: National Institute for Environmental Studies, Japan (NIES)
 # Contact: tsuzuki.yoichi@nies.go.jp, 
 #          yoichi.tsuzuki.95@gmail.com
@@ -10,73 +10,75 @@
 
 rm(list=ls())
 
+# ============================================================================
+#  1. calculating population statistics under no chemical exposure
+# ============================================================================
 library(expm)
 library(popbio)
 
-s1 <- 0.95
-f3 <- 300
-s2 <- 0.95
-s3 <- 0.95
+# demographic rates
+s1 <- 0.95  # survival of stage 1
+s2 <- 0.95  # survival of stage 2
+s3 <- 0.95  # survival of stage 3
+f3 <- 300   # fecundity of stage 3
 
+# result storage for aseasonal model
 lambda.null <- array(dim = c(2,6))
 elast.null <- array(dim = c(2,3,3))
 elast.4rates.null <- array(dim = c(2,4))
 
+# result storage for seasonal model
 mpm.A <- array(dim = c(2,10,10,10,6,6,3,3,60))
 lambda <- array(dim = c(2,10,10,10,6,6,60))
 sensit <- array(dim = c(2,10,10,10,6,6,3,3,60))
 elast <- array(dim = c(2,10,10,10,6,6,3,3,60))
 elast.4rates <- array(dim = c(2,10,10,10,6,6,4,60))
 
-for(g in 1:2){ 
-  # growth probability
-  g1 <- c(0.1, 0.9)[g]
-  g2 <- c(0.1, 0.9)[g]
+for(g in 1:2){  # variations in growth probability
+  g1 <- c(0.1, 0.9)[g]  # growth of stage 1
+  g2 <- c(0.1, 0.9)[g]  # growth of stage 2
   
-  # matrix during the breeding season
+  # per-phase matrix during the breeding season
   mpm.r <- matrix(c(s1*(1-g1), 0,         f3,
                     s1*g1,     s2*(1-g2), 0,
                     0,         s2*g2,     s3), 3, byrow = T)
   
-  # population growth of aseasonal model
-  lambda.null[g,] <- Re(eigen(mpm.r)$values[1]) ^ (1:6 * 10)
-  # elasticity of aseasonal model
-  elast.null[g,,] <- elasticity(mpm.r)
-  elast.4rates.null[g,] <- c(sum(elast.null[g,,1:2]), 
-                             sum(elast.null[g,,] * 
-                                   matrix(c(-s1*g1, 0,      0,
-                                            s1*g1,  -s2*g2, 0,
-                                            0,      s2*g2,  0), 
-                                          3, byrow = T) / 
-                                   mpm.r, na.rm = T),
-                             elast.null[g,1,3],
-                             elast.null[g,3,3])
+  # population statistics of the aseasonal model
+    # annaul population growth rate
+    lambda.null[g,] <- Re(eigen(mpm.r)$values[1]) ^ (1:6 * 10)
+    # elasticities of per-phase population growth rate to matrix elements
+    elast.null[g,,] <- elasticity(mpm.r) 
+    # elasticities of per-phase population growth rate to demographic rates
+    elast.4rates.null[g,] <- c(sum(elast.null[g,,1:2]), 
+                              sum(elast.null[g,,] * 
+                                    matrix(c(-s1*g1, 0,      0,
+                                              s1*g1,  -s2*g2, 0,
+                                              0,      s2*g2,  0), 
+                                            3, byrow = T) / 
+                                    mpm.r, na.rm = T),
+                              elast.null[g,1,3],
+                              elast.null[g,3,3])
   
-  for(wj in 1:10){ 
-    # seasonal coefficient for juvenile survival
+  for(wj in 1:10){  # variations in seasonal coefficient of juvenile survival
     w1 <- 0.1 * wj 
     w2 <- 0.1 * wj 
     
-    for(wa in 1:10){ 
-      # seasonal coefficient for adult survival
+    for(wa in 1:10){  # variations in seasonal coefficient of adult survival
       w3 <- 0.1 * wa 
       
-      for(wg1 in 1:10){ 
-        # seasonal coefficient for growth
+      for(wg1 in 1:10){  # variations in seasonal coefficient of growth
         wg <- 0.1 * wg1
         
-        # matrix during the non-breeding season
+        # per-phase matrix during the non-breeding season
         mpm.w <- matrix(c(s1*w1*(1-g1*wg), 0,               0,
                           s1*w1*g1*wg,     s2*w2*(1-g2*wg), 0,
                           0,               s2*w2*g2*wg,     s3*w3),
                         3, byrow = T)
         
-        for(n in 1:6){ 
-          # the number of phases
+        for(n in 1:6){  # variations in the number of phases
           n.season <- 10 * n 
           
-          for(p in 1:6){ 
-            # the proportion of the breeding season
+          for(p in 1:6){  # variations in the proportion of the breeding season
             p.repseason <- 0.1 * p 
             
             # duration of breeding
@@ -94,24 +96,29 @@ for(g in 1:2){
               }
             }
             
+            # population statistics of the seasonal model
             for(i in 1:n.season){
               mpm.Bi <- mpms[,,i]
               mpm.Di <- mpms[,,i+1]
               for(j in 2:(n.season-1)){
                 mpm.Di <- mpms[,,i+j] %*% mpm.Di
               }
+              # annual population matrix A
               mpm.Ai <- mpm.Di %*% mpm.Bi
+              mpm.A[g,wj,wa,wg1,n,p,,,i] <- mpm.Ai
+              # annual population growth rate lambda
               lambda.i <- Re(eigen(mpm.Ai)$values[1])
+              lambda[g,wj,wa,wg1,n,p,i] <- lambda.i
+              # leading right and left eigenvectors of A 
               w.i <- Re(eigen(mpm.Ai)$vectors[,1])
               v.i <- Re(eigen(t(mpm.Ai))$vectors[,1])
+              # sensitivity 
               sensit.i <- t(mpm.Di) %*% matrix(abs(v.i), length(v.i)) %*% matrix(abs(w.i), 1) / 
                 sum(abs(w.i)*abs(v.i))
+              sensit[g,wj,wa,wg1,n,p,,,i] <- sensit.i
+              # elasticity
               elast.i <- t(mpm.Di) %*% matrix(abs(v.i), length(v.i)) %*% matrix(abs(w.i), 1) / 
                 sum(abs(w.i)*abs(v.i)) / lambda.i * mpm.Bi
-              
-              lambda[g,wj,wa,wg1,n,p,i] <- lambda.i
-              mpm.A[g,wj,wa,wg1,n,p,,,i] <- mpm.Ai
-              sensit[g,wj,wa,wg1,n,p,,,i] <- sensit.i
               elast[g,wj,wa,wg1,n,p,,,i] <- elast.i
               elast.4rates[g,wj,wa,wg1,n,p,,i] <- c(sum(elast.i[,1:2]), 
                                                     sum(elast.i * 
@@ -132,8 +139,15 @@ for(g in 1:2){
 
 
 
-#######
+# ============================================================================
+#  2. Threshold chemical concentration that decreases the annual population 
+#       growth rate below 1
+# ============================================================================
 library(expm)
+
+# ----------------------------------------
+#   2.1 Functions used for calculation 
+# ----------------------------------------
 
 thres.null.sj <- function(x){
   cx <- 1 / (1 + exp(h*x))
@@ -231,6 +245,11 @@ thres.g <- function(x){
   abs(log(lambda.exp))
 }
 
+# ----------------------------------------
+#   2.2 calculation  
+# ----------------------------------------
+
+# result storage
 lambda.null.threshold.sj <- array(dim=c(2,6))
 lambda.threshold.sj <- array(dim = c(2,10,10,10,6,6))
 lambda.null.threshold.sa <- array(dim=c(2,6))
@@ -240,14 +259,15 @@ lambda.threshold.f <- array(dim = c(2,10,10,10,6,6))
 lambda.null.threshold.g <- array(dim=c(2,6))
 lambda.threshold.g <- array(dim = c(2,10,10,10,6,6))
 
-h <- 4 # Hill coefficient
-library(expm)
-pb <- txtProgressBar(min = 1, max = 14400, style = 3)
+# Hill coefficient
+h <- 4
+
+pb <- txtProgressBar(min = 1, max = 72000, style = 3)
 for(g in 1:2){
   g1 <- c(0.1, 0.9)[g]
   g2 <- c(0.1, 0.9)[g]
   for(n in 1:6){
-    n.season <- 10 * n # 10 ~ 60
+    n.season <- 10 * n 
     res.null <- optim(0, thres.null.sj, method = "Brent", lower = -5, upper = 5)
     lambda.null.threshold.sj[g,n] <- res.null$par
     res.null <- optim(0, thres.null.sa, method = "Brent", lower = -5, upper = 5)
@@ -257,14 +277,14 @@ for(g in 1:2){
     res.null <- optim(0, thres.null.g, method = "Brent", lower = -5, upper = 5)
     lambda.null.threshold.g[g,n] <- res.null$par
     for(wj in 1:10){
-      w1 <- 0.1 * wj # 0.1 ~ 1.0
-      w2 <- 0.1 * wj # 0.1 ~ 1.0
+      w1 <- 0.1 * wj 
+      w2 <- 0.1 * wj 
       for(wa in 1:10){
-        w3 <- 0.1 * wa # 0.1 ~ 1.0
+        w3 <- 0.1 * wa 
         for(wg1 in 1:10){
           wg <- 0.1 * wg1
           for(p in which(Re(lambda[g,wj,wa,wg1,n,,1])>=1)){
-            p.repseason <- 0.1 * p # 0.1 ~ 0.6
+            p.repseason <- 0.1 * p 
             n.replength <- n.season * p.repseason
             res <- optim(0, thres.sj, method = "Brent", lower = -5, upper = 5)
             lambda.threshold.sj[g,wj,wa,wg1,n,p] <- res$par
@@ -274,8 +294,8 @@ for(g in 1:2){
             lambda.threshold.f[g,wj,wa,wg1,n,p] <- res$par
             res <- optim(0, thres.g, method = "Brent", lower = -5, upper = 5)
             lambda.threshold.g[g,wj,wa,wg1,n,p] <- res$par
-            setTxtProgressBar(pb, (g-1)*7200 + (n-1)*1200 + (wj-1)*120 + 
-                                (wa-1)*12 + (wg1-1)*6 + p)
+            setTxtProgressBar(pb, (g-1)*36000 + (n-1)*6000 + (wj-1)*600 + 
+                                (wa-1)*60 + (wg1-1)*6 + p)
           }
         }
       }
@@ -285,8 +305,15 @@ for(g in 1:2){
 
 
 
-# ec95
+# ============================================================================
+#  3. Threshold chemical concentration that decreases the annual population 
+#       growth rate by five percent
+# ============================================================================
 library(expm)
+
+# ----------------------------------------
+#   3.1 Functions used for calculation 
+# ----------------------------------------
 
 ec95.null.sj <- function(x){
   cx <- 1 / (1 + exp(h*x))
@@ -440,6 +467,11 @@ ec95.g <- function(x){
   abs(lambda.exp/lambda - 0.95)
 }
 
+# ----------------------------------------
+#   3.2 Calculation 
+# ----------------------------------------
+
+# result storage
 lambda.null.ec95.sj <- array(dim=c(2,6))
 lambda.ec95.sj <- array(dim = c(2,10,10,10,6,6))
 lambda.null.ec95.sa <- array(dim=c(2,6))
@@ -449,14 +481,15 @@ lambda.ec95.f <- array(dim = c(2,10,10,10,6,6))
 lambda.null.ec95.g <- array(dim=c(2,6))
 lambda.ec95.g <- array(dim = c(2,10,10,10,6,6))
 
+# Hill coefficient
+h <- 4 
 
-h <- 4 # Hill coefficient
-pb <- txtProgressBar(min = 1, max = 14400, style = 3)
+pb <- txtProgressBar(min = 1, max = 72000, style = 3)
 for(g in 1:2){
   g1 <- c(0.1, 0.9)[g]
   g2 <- c(0.1, 0.9)[g]
   for(n in 1:6){
-    n.season <- 10 * n # 10 ~ 60
+    n.season <- 10 * n 
     res.null <- optim(0, ec95.null.sj, method = "Brent", lower = -5, upper = 5)
     lambda.null.ec95.sj[g,n] <- res.null$par
     res.null <- optim(0, ec95.null.sa, method = "Brent", lower = -5, upper = 5)
@@ -473,7 +506,7 @@ for(g in 1:2){
         for(wg1 in 1:10){
           wg <- 0.1 * wg1
           for(p in 1:6){
-            p.repseason <- 0.1 * p # 0.1 ~ 0.6
+            p.repseason <- 0.1 * p 
             n.replength <- n.season * p.repseason
             res <- optim(0, ec95.sj, method = "Brent", lower = -5, upper = 5)
             lambda.ec95.sj[g,wj,wa,wg1,n,p] <- res$par
@@ -483,8 +516,8 @@ for(g in 1:2){
             lambda.ec95.f[g,wj,wa,wg1,n,p] <- res$par
             res <- optim(0, ec95.g, method = "Brent", lower = -5, upper = 5)
             lambda.ec95.g[g,wj,wa,wg1,n,p] <- res$par
-            setTxtProgressBar(pb, (g-1)*7200 + (n-1)*1200 + (wj-1)*120 + 
-                                (wa-1)*12 + (wg1-1)*6 + p)
+            setTxtProgressBar(pb, (g-1)*36000 + (n-1)*6000 + (wj-1)*600 + 
+                                (wa-1)*60 + (wg1-1)*6 + p)
           }
         }
       }
@@ -493,9 +526,15 @@ for(g in 1:2){
 }
 
 
-# prop.dec
-
+# ============================================================================
+#  4. Response of the annual population growth rate to chemical exposure
+# ============================================================================
 library(expm)
+
+# ----------------------------------------
+#   4.1 Functions to obtain the annual
+#         populatioon growth rate
+# ----------------------------------------
 
 prop.dec.null.sj <- function(x){
   cx <- 1 / (1 + exp(h*x))
@@ -585,6 +624,11 @@ prop.dec.g <- function(x){
   Re(eigen(mpm.exp)$values[1])
 }
 
+# ----------------------------------------
+#   4.2 Calculation
+# ----------------------------------------
+
+# result storage
 lambda.null.prop.dec.sj <- array(dim=c(2,6,102))
 lambda.prop.dec.sj <- array(dim = c(2,10,10,10,6,6,102))
 lambda.null.prop.dec.sa <- array(dim=c(2,6,102))
@@ -594,14 +638,15 @@ lambda.prop.dec.f <- array(dim = c(2,10,10,10,6,6,102))
 lambda.null.prop.dec.g <- array(dim=c(2,6,102))
 lambda.prop.dec.g <- array(dim = c(2,10,10,10,6,6,102))
 
-h <- 4 # Hill coefficient
+# Hill coefficient
+h <- 4 
 logconc <- c(-Inf, -50:50/25)
 pb <- txtProgressBar(min = 1, max = 72000, style = 3)
 for(g in 1:2){
   g1 <- c(0.1, 0.9)[g]
   g2 <- c(0.1, 0.9)[g]
   for(n in 1:6){
-    n.season <- 10 * n # 10 ~ 60
+    n.season <- 10 * n 
     for(q in 1:102){
       conc <- logconc[q]
       lambda.null.prop.dec.sj[g,n,q] <- prop.dec.null.sj(conc)
@@ -617,7 +662,7 @@ for(g in 1:2){
         for(wg1 in 1:10){
           wg <- 0.1 * wg1
           for(p in 1:6){
-            p.repseason <- 0.1 * p # 0.1 ~ 0.6
+            p.repseason <- 0.1 * p 
             n.replength <- n.season * p.repseason
             for(q in 1:102){
               conc <- logconc[q]
@@ -637,12 +682,16 @@ for(g in 1:2){
 
 save.image("Three-stage_model1.RData")
 
-# Graphics
 
+# ============================================================================
+#  5. Figures
+# ============================================================================
 library(tagcloud)
 library(scales)
 
-# Fig 2
+# ----------------------------------------
+#   Fig S8 (a)
+# ----------------------------------------
 range(log(lambda[,,,,,,1])/log(10))
 range(log(lambda.null)/log(10))
 freq <- array(0, dim=c(6,6,90))
@@ -672,10 +721,12 @@ par(mfrow=c(1,1), mar=c(5.1,4.1,4.1,2.1))
 dev.off()
 
 
-# Fig 3
+# ----------------------------------------
+#   Fig S9
+# ----------------------------------------
 library(scales)
 
-# Preparing subdivided data --------------------------------------------------|
+# Preparing subdivided data 
 ther.sj <- array(0,dim=c(6,6,53))
 for(k in 1:2){
   for(j in 1:6){
@@ -756,7 +807,7 @@ for(k in 1:2){
 }
 ther.g.cumsum <- apply(apply(ther.g,c(2,3),sum),2,cumsum)
 
-# Drawing histograms ---------------------------------------------------------|
+# Drawing histograms 
 
 png("Three-stage1_Fig3.png", width = 5040, height = 3240, res = 300)
 par(oma=c(0,0,0,0)); layout(matrix(c(rep(1,18),rep(2,3),
@@ -855,13 +906,15 @@ layout(matrix(1)); par(mar=c(5.1,4.1,4.1,2.1), mfrow=c(1,1), oma=c(0,0,0,0))
 dev.off()
 
 
-# Fig 4
+# ----------------------------------------
+#   Fig S11
+# ----------------------------------------
 png("Three-stage1_Fig4.png", width = 4000, height = 3200, res = 300)
 layout(matrix(c(rep(1,2),rep(2,2),rep(3,1),
                 rep(4,2),rep(5,2),rep(6,1)), nrow = 2, ncol = 5, byrow = T))
 par(mar=c(3,3,3,3),oma=c(4,4,0,0))
 
-# Elasticity to s1 -----------------------------------------------------------|
+# Elasticity to s1 
 x1 <- apply(elast.4rates[1,,,1,6,1,1,1:60],c(1,2),sum) - elast.4rates.null[1,1] * 60
 cols.a <- smoothPalette(c(sapply(x1, function(x) max(x, 0)),60,0), max = 60, 
                         palfunc = colorRampPalette(smoothPalette(
@@ -891,7 +944,7 @@ rect(rep(1:10,10)-0.5, rep(1:10,each=10)-0.5,
      col = c(NA, 1)[as.numeric(round(apply(elast[1,,,1,6,1,,,],c(1,2),sum)/60,4)!=1)+1],
      border = "gray25",lwd=2)
 
-# Elasticity to s2 -----------------------------------------------------------|
+# Elasticity to s2 
 x1 <- apply(elast.4rates[1,,,1,6,1,4,1:60],c(1,2),sum) - elast.4rates.null[1,4] * 60
 cols.a <- smoothPalette(c(sapply(x1, function(x) max(x, 0)),60,0), max = 60, 
                         palfunc = colorRampPalette(smoothPalette(
@@ -921,7 +974,7 @@ rect(rep(1:10,10)-0.5, rep(1:10,each=10)-0.5,
      col = c(NA, 1)[as.numeric(round(apply(elast[1,,,1,6,1,,,],c(1,2),sum)/60,4)!=1)+1],
      border = "gray25",lwd=2)
 
-# Legend ---------------------------------------------------------------------|
+# Legend 
 plot(NA,NA,bty="n", xlim=c(0,1), ylim=c(0,1),
      xlab="", ylab="", main="", xaxt="n", yaxt="n")
 rect(0.2, 0:17/22.5,
@@ -931,7 +984,7 @@ rect(0.2, 0:17/22.5,
 segments(0.4,0,0.4,0.8,lwd=2,col="gray25")
 segments(0.4,0:4*0.2,0.55,0:4*0.2,lwd=2,col="gray25")
 
-# Elasticity to f ------------------------------------------------------------|
+# Elasticity to f 
 x1 <- apply(elast.4rates[1,,,1,6,1,3,1:60],c(1,2),sum) - elast.4rates.null[1,3] * 60
 cols.a <- smoothPalette(c(sapply(x1, function(x) max(x, 0)),60,0), max = 60, 
                         palfunc = colorRampPalette(smoothPalette(
@@ -961,7 +1014,7 @@ rect(rep(1:10,10)-0.5, rep(1:10,each=10)-0.5,
      col = c(NA, 1)[as.numeric(round(apply(elast[1,,,1,6,1,,,],c(1,2),sum)/60,4)!=1)+1],
      border = "gray25",lwd=2)
 
-# Elasticity to g ------------------------------------------------------------|
+# Elasticity to g 
 x1 <- apply(elast.4rates[1,,,1,6,1,2,1:60],c(1,2),sum) - elast.4rates.null[1,2] * 60
 cols.a <- smoothPalette(c(sapply(x1, function(x) max(x, 0)),60,0), max = 60, 
                         palfunc = colorRampPalette(smoothPalette(
@@ -991,7 +1044,7 @@ rect(rep(1:10,10)-0.5, rep(1:10,each=10)-0.5,
      col = c(NA, 1)[as.numeric(round(apply(elast[1,,,1,6,1,,,],c(1,2),sum)/60,4)!=1)+1],
      border = "gray25",lwd=2)
 
-# Legend ---------------------------------------------------------------------|
+# Legend 
 plot(NA,NA,bty="n", xlim=c(0,1), ylim=c(0,1),
      xlab="", ylab="", main="", xaxt="n", yaxt="n")
 rect(0.1,6:8/10,0.4,7:9/10,
@@ -1004,7 +1057,9 @@ layout(matrix(1))
 dev.off()
 
 
-# Fig 5
+# ----------------------------------------
+#   Fig S13
+# ----------------------------------------
 
 library(tagcloud)
 library(scales)
